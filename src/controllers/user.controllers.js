@@ -6,15 +6,15 @@ const sendEmail = require("../utils/sendEmail");
 const EmailCode = require("../models/EmailCode");
 
 const getAll = catchError(async (req, res) => {
-  const results = await User.findAll();
-  return res.json(results);
+  const users = await User.findAll();
+  return res.json(users);
 });
 
 const create = catchError(async (req, res) => {
   const { email, password, firstName, lastName, country, image, frontBaseUrl } =
     req.body;
   const encriptedPassword = await bcrypt.hash(password, 10);
-  const result = await User.create({
+  const user = await User.create({
     email,
     password: encriptedPassword,
     firstName,
@@ -25,7 +25,7 @@ const create = catchError(async (req, res) => {
   const code = require("crypto").randomBytes(32).toString("hex");
   const link = `${frontBaseUrl}/auth/verify_email/${code}`;
 
-  await EmailCode.create({ code, userId: result.id });
+  await EmailCode.create({ code, userId: user.id });
 
   await sendEmail({
     to: `${email}`,
@@ -37,44 +37,46 @@ const create = catchError(async (req, res) => {
             <b> thanks for sign up in Users app</b>
             `,
   });
-  return res.status(201).json(result);
+  return res.status(201).json(user);
 });
 
 const getOne = catchError(async (req, res) => {
   const { id } = req.params;
-  const result = await User.findByPk(id);
-  if (!result) return res.sendStatus(404);
-  return res.json(result);
+  const user = await User.findByPk(id);
+  if (!user) return res.sendStatus(404);
+  return res.json(user);
 });
 
 const remove = catchError(async (req, res) => {
   const { id } = req.params;
   await User.destroy({ where: { id } });
-  return res.sendStatus(204);
+  return res
+    .status(200)
+    .json({ message: "El usuario se ha eliminado correctamente" });
 });
 
 const update = catchError(async (req, res) => {
   const { firstName, lastName, country, image } = req.body;
   const { id } = req.params;
-  const result = await User.update(
+  const userUpdate = await User.update(
     { firstName, lastName, country, image },
     {
       where: { id },
       returning: true,
     }
   );
-  if (result[0] === 0) return res.sendStatus(404);
-  return res.json(result[1][0]);
+  if (userUpdate[0] === 0) return res.sendStatus(404);
+  return res.json(userUpdate[1][0]);
 });
 
 const verifyCode = catchError(async (req, res) => {
   const { code } = req.params;
-  const emialCode = await EmailCode.findOne({ where: { code } });
-  if (!emialCode) return res.status(401).json({ message: "invalid code" });
-  const user = await User.findByPk(emialCode.userId);
+  const userEmailCode = await EmailCode.findOne({ where: { code } });
+  if (!userEmailCode) return res.status(401).json({ message: "invalid code" });
+  const user = await User.findByPk(userEmailCode.userId);
   user.isVerified = true;
   await user.save();
-  await emialCode.destroy();
+  await userEmailCode.destroy();
   return res.json(user);
 });
 
@@ -84,8 +86,9 @@ const login = catchError(async (req, res) => {
   const user = await User.findOne({ where: { email } });
   if (!user) return res.status(401).json({ error: "invalid credentials" });
 
-  const isValid = await bcrypt.compare(password, user.password);
-  if (!isValid) return res.status(401).json({ error: "invalid credentials" });
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  if (!isPasswordValid)
+    return res.status(401).json({ error: "invalid credentials" });
 
   if (!user.isVerified)
     return res.status(401).json({ error: "invalid credentials" });
@@ -127,23 +130,28 @@ const resetPassword = catchError(async (req, res) => {
               <a href="${link}">${link}</a>
             `,
   });
-  return res.sendStatus(202);
+  return res.status(202).json({
+    message:
+      "Se ha enviado un correo electrónico con un enlace para restablecer su contraseña",
+  });
 });
 
 const verifyResetPassword = catchError(async (req, res) => {
   const { code } = req.params;
   const { password } = req.body;
 
-  const result = await EmailCode.findOne({ where: { code } });
-  if (!result) return res.sendStatus(401);
+  const codeUser = await EmailCode.findOne({ where: { code } });
+  if (!codeUser) return res.sendStatus(401);
 
   const encriptedPassword = await bcrypt.hash(password, 10);
-  const user = await User.findByPk(result.userId);
+  const user = await User.findByPk(codeUser.userId);
   user.password = encriptedPassword;
   await user.save();
-  await result.destroy();
+  await codeUser.destroy();
 
-  return res.sendStatus(200);
+  return res
+    .status(200)
+    .json({ message: "La contraseña se ha restablecido correctamente" });
 });
 
 module.exports = {
